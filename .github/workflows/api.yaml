@@ -1,0 +1,104 @@
+name: assesment-pipline
+on: 
+ push:
+   branches:
+      - main
+   paths:
+     - 'assesment-2/'
+     - '.github/workflows/api.yaml'
+permissions: write-all
+jobs:
+  lint-test:
+     runs-on: ubuntu-latest
+     defaults:
+       run: 
+          working-directory: 'assesment-2'
+     steps:
+         - name: checkout the code
+           uses: actions/checkout@v7
+         - name: setup python
+           uses: actions/setup-python@v7
+           with:
+             python-version: 3.15
+         - name: install deps
+           run: |
+               pip install --no-cache-dir -r requirements.txt
+               pip install ruff  pytest 
+         - name: lint check
+           run:  ruff check .
+         - name: Check Formatting
+           run:  ruff format --check .
+         - name: Run Test
+           run:  PYTHONPATH=. pytest -v
+  build:
+    needs: lint-test
+    runs-on: ubuntu-latest
+    defaults:
+       run:
+          working-directory: 'assesment-2'
+    steps:
+         - name: checkout the code
+           uses: actions/checkout@v7
+         - name: setup python
+           uses: actions/setup-python@v7
+           with:
+             python-version: 3.15
+         - name: install deps
+           run: |
+             pip install --no-cache-dir -r requirements.txt
+             pip install build 
+         - name: build python package
+           run: python -m build
+         - name: save to github artifacts
+           uses: actions/upload-artifact@v7
+           with:
+             name: python-dist-artifacts    
+             path: dist/
+  build-push:
+     needs: build
+     runs-on: ubuntu-latest
+     defaults:
+       run:
+         working-directory: 'assesment-2'
+     steps:
+       - name: checkout code
+         uses: actions/checkout@v7
+       - name: Login to Docker Hub
+         uses: docker/login-action@v4
+         with:
+           username: ${{ vars.DOCKERHUB_USERNAME }}
+           password: ${{ secrets.DOCKERHUB_TOKEN }}
+       - name: Set up Docker Buildx
+         uses: docker/setup-buildx-action@v4
+       - name: Build and push
+         uses: docker/build-push-action@v7
+         with:
+           context: ./assesment-2    
+           file: ./assesment-2/Dockerfile
+           push: true
+           tags:  | 
+             ${{vars.DOCKERHUB_USERNAME}}/apex-api:${{github.sha}}
+             ${{vars.DOCKERHUB_USERNAME}}/apex-api:latest
+  deploy:
+    needs: build-push
+    runs-on: ubuntu-latest
+    defaults:
+       run:
+          working-directory: 'assesment-2'
+    steps:
+      - name: Deploy the app
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+           username: ${{ secrets.SERVER_USERNAME }}
+           key: ${{ secrets.SERVER_KEY }}
+           host: ${{ secrets.SERVER_HOST }} 
+           script: |
+             echo " login successfull.. "
+             docker pull ${{ vars.DOCKERHUB_USERNAME}}/apex-api:latest
+             docker stop apex-api-container || true
+             docker rm  apex-api-container || true
+             docker run -d --name apex-api-container -p 5000:5000  ${{ vars.DOCKERHUB_USERNAME }}/apex-api:latest
+
+
+
+

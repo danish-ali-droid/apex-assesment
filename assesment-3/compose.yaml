@@ -1,0 +1,46 @@
+services:
+  db:
+    container_name: db_container
+    image: mariadb
+    environment:
+       MARIADB_HOST: ${HOST}
+       MARIADB_ROOT_PASSWORD: ${DB_PASSWORD}
+       PORT: ${PORT}
+       MARIADB_DATABASE: ${DB_NAME}
+    env_file:
+      - .env
+    restart: on-failure
+    healthcheck:
+      test: ["CMD", "mariadb-admin", "ping", "-h", "localhost", "-u", "root", "-p${DB_PASSWORD}"]
+      interval: 5s
+      retries: 5
+    volumes:
+      -  db_data:/var/lib/mysql
+      -  ./database/schema.sql:/docker-entrypoint-initdb.d/schema.sql
+    ports:
+      - ${PORT} 
+  web:
+    container_name: web_container
+    build:
+      context: ./frontend
+    ports:
+        - '5173:5173'
+  backend:
+    container_name: backend_container
+    build:
+      context: ./backend
+    environment:
+       MARIADB_HOST: ${HOST}
+       MARIADB_ROOT_PASSWORD: ${DB_PASSWORD}
+       PORT: ${PORT}
+       MARIADB_DATABASE: ${DB_NAME}
+    env_file:
+      - .env
+    ports:
+      - '8000:80'    
+    depends_on:
+       db:
+        condition: service_healthy
+    
+volumes:
+  db_data:

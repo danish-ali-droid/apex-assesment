@@ -1,0 +1,106 @@
+name: Continuous Deployment (CD) to AWS
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'backend/**'
+      - 'frontend/**'
+      - 'docker-compose*'
+      - '.github/workflows/cd-deploy.yml'
+  workflow_dispatch:
+
+permissions:
+  id-token: write  # Required for AWS OIDC authentication
+  contents: read
+
+jobs:
+  build-and-deploy:
+    name: Build, Push & Deploy Containers
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      # ========================================================================
+      # Use OIDC when AWS_ROLE_ARN is configured; otherwise use repository keys.
+      # ========================================================================
+      - name: Configure AWS Credentials (OIDC or Secret Keys)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-region: ${{ secrets.AWS_REGION || 'us-east-1' }}
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-access-key-id: ${{ secrets.AWS_ROLE_ARN == '' && secrets.AWS_ACCESS_KEY_ID || '' }}
+          aws-secret-access-key: ${{ secrets.AWS_ROLE_ARN == '' && secrets.AWS_SECRET_ACCESS_KEY || '' }}
+
+      # ========================================================================
+      # Amazon ECR Login & Image Push
+      # ========================================================================
+      - name: Log in to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build, Tag, and Push Docker Images
+        id: docker-build
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          docker build -t "$ECR_REGISTRY/backend:$IMAGE_TAG" -t "$ECR_REGISTRY/backend:latest" ./backend
+          docker push "$ECR_REGISTRY/backend:$IMAGE_TAG"
+          docker push "$ECR_REGISTRY/backend:latest"
+
+          docker build -t "$ECR_REGISTRY/frontend:$IMAGE_TAG" -t "$ECR_REGISTRY/frontend:latest" ./frontend
+          docker push "$ECR_REGISTRY/frontend:$IMAGE_TAG"
+          docker push "$ECR_REGISTRY/frontend:latest"
+
+      # ========================================================================
+      # Deploy to EC2 Web Servers via AWS Systems Manager (SSM)
+      # No open SSH port required - Principle of Least Privilege!
+      # ========================================================================
+      - name: Deploy Containers to EC2 via AWS SSM Run Command
+        env:
+          AWS_REGION: ${{ secrets.AWS_REGION || 'us-east-1' }}
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          INSTANCE_IDS=$(aws ec2 describe-instances \
+            --region "$AWS_REGION" \
+            --filters "Name=tag:Role,Values=WebServer" "Name=instance-state-name,Values=running" \
+            --query 'Reservations[].Instances[].InstanceId' \
+            --output text)
+          if [ -z "$INSTANCE_IDS" ]; then
+            echo "::error::No running EC2 instances tagged Role=WebServer were found."
+            exit 1
+          fi
+
+          COMMANDS=$(jq -cn \
+            --arg region "$AWS_REGION" \
+            --arg registry "$ECR_REGISTRY" \
+            --arg tag "$IMAGE_TAG" \
+            --arg sha "$GITHUB_SHA" \
+            '{commands:[
+              "set -eu",
+              ("git -C /opt/app/source fetch --depth 1 origin " + $sha),
+              ("git -C /opt/app/source checkout --detach " + $sha),
+              ("cd /opt/app/source/assesment-6 && export DB_PASSWORD=\"$(aws ssm get-parameter --region " + $region + " --name \"$(sed -n '\''s/^DB_PASSWORD_PARAMETER_NAME=//p'\'' .env)\" --with-decryption --query '\''Parameter.Value'\'' --output text)\" && export ECR_REGISTRY=" + $registry + " IMAGE_TAG=" + $tag + " && aws ecr get-login-password --region " + $region + " | docker login --username AWS --password-stdin " + $registry),
+              "docker compose -f docker-compose.prod.yml pull",
+              "docker compose -f docker-compose.prod.yml up -d --no-build --remove-orphans",
+              "docker image prune -f"
+            ]}')
+
+          COMMAND_ID=$(aws ssm send-command \
+            --region "$AWS_REGION" \
+            --targets "Key=tag:Role,Values=WebServer" \
+            --document-name "AWS-RunShellScript" \
+            --parameters "$COMMANDS" \
+            --comment "Automated GitHub Actions Deployment - Commit ${{ github.sha }}" \
+            --query "Command.CommandId" \
+            --output text)
+
+          for instance_id in $INSTANCE_IDS; do
+            aws ssm wait command-executed \
+              --region "$AWS_REGION" \
+              --command-id "$COMMAND_ID" \
+              --instance-id "$instance_id"
+          done

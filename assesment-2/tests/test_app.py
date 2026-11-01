@@ -31,3 +31,8 @@ def test_readiness_check(client):
     assert response.status_code == 200
     data = response.get_json()
     assert data["status"] == "ready"
+
+
+def test_metrics_endpoint(client):
+    response = client.get("/metrics")
+    assert response.status_code == 200

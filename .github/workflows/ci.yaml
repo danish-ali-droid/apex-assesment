@@ -4,7 +4,7 @@ on:
    branches:
       - main
    paths:
-     - 'assesment-2/'
+     - 'assesment-2/**'
      - '.github/workflows/ci.yaml'
 permissions: write-all
 jobs:

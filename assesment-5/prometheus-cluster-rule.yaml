@@ -1,0 +1,32 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: apex-operations-alerts
+  namespace: default
+  labels:
+    role: alert-rules
+spec:
+  groups:
+  - name: apex-api-availability
+    rules:
+      - alert: ApexAPIHighErrorRate
+        expr: |
+          sum(rate(http_requests_total{app="apex-operations-api", http_status=~"5.."}[5m]))
+          /
+          sum(rate(http_requests_total{app="apex-operations-api"}[5m])) > 0.02
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "High HTTP 5xx error rate on Apex API"
+          description: "Error rate is above 2% for more than 2 minutes."
+
+      # 2. Pod Readiness Failure Alert (Failing /ready check > 3 minutes)
+      - alert: ApexAPIReadinessProbeFailing
+        expr: kube_pod_status_ready{condition="false", pod=~"apex-operations-api-.*"} == 1
+        for: 3m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Apex API pod readiness failing"
+          description: "Pod {{ $labels.pod }} has been failing its readiness probe continuously."

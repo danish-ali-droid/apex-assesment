@@ -5,7 +5,7 @@ on:
       - main
    paths:
      - 'assesment-2/**'
-     - '.github/workflows/ci.yaml'
+     - '.github/workflows/api.yaml'
 permissions: write-all
 jobs:
   lint-test:

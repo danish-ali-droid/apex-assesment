@@ -8,15 +8,19 @@
 # ==============================================================================
 
 # Build stage
-FROM node:20-alpine AS builder
+FROM node:24-alpine AS builder
 
 WORKDIR /usr/src/app
 
 COPY package*.json ./
-RUN npm ci --only=production
+RUN npm ci --omit=dev
 
 # Runtime stage
-FROM node:20-alpine AS runner
+FROM node:24-alpine AS runner
+
+RUN apk upgrade --no-cache \
+  && rm -rf /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/corepack \
+  && rm -f /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack
 
 WORKDIR /usr/src/app
 
@@ -29,7 +33,6 @@ ENV NODE_ENV=production \
 
 # Copy node_modules from builder
 COPY --from=builder --chown=appuser:appgroup /usr/src/app/node_modules ./node_modules
-COPY --chown=appuser:appgroup package*.json ./
 COPY --chown=appuser:appgroup src/ ./src/
 
 USER appuser

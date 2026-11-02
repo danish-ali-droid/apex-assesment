@@ -1,12 +1,12 @@
 # ==============================================================================
 # Production Dockerfile for React SPA Frontend
 # - Multi-stage build
-# - Node 20 alpine build environment
+# - Node 24 alpine build environment
 # - Lightweight Nginx alpine production server
 # ==============================================================================
 
 # Build stage
-FROM node:20-alpine AS builder
+FROM node:24-alpine AS builder
 
 WORKDIR /app
 
@@ -17,7 +17,9 @@ COPY . .
 RUN npm run build
 
 # Runtime stage
-FROM nginx:1.27-alpine AS runner
+FROM nginx:1.31-alpine AS runner
+
+RUN apk upgrade --no-cache
 
 # Remove default nginx static assets
 RUN rm -rf /usr/share/nginx/html/*

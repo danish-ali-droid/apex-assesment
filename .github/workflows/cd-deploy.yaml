@@ -4,14 +4,13 @@ on:
   push:
     branches: [main]
     paths:
-      - 'backend/**'
-      - 'frontend/**'
-      - 'docker-compose*'
-      - '.github/workflows/cd-deploy.yml'
+      - 'assesment-6/backend/**'
+      - 'assesment-6/frontend/**'
+      - 'assesment-6/docker-compose*'
+      - '.github/workflows/cd-deploy.yaml'
   workflow_dispatch:
 
 permissions:
-  id-token: write  # Required for AWS OIDC authentication
   contents: read
 
 jobs:
@@ -22,37 +21,39 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      # ========================================================================
-      # Use OIDC when AWS_ROLE_ARN is configured; otherwise use repository keys.
-      # ========================================================================
-      - name: Configure AWS Credentials (OIDC or Secret Keys)
+      - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-region: ${{ secrets.AWS_REGION || 'us-east-1' }}
-          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
-          aws-access-key-id: ${{ secrets.AWS_ROLE_ARN == '' && secrets.AWS_ACCESS_KEY_ID || '' }}
-          aws-secret-access-key: ${{ secrets.AWS_ROLE_ARN == '' && secrets.AWS_SECRET_ACCESS_KEY || '' }}
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
 
-      # ========================================================================
-      # Amazon ECR Login & Image Push
-      # ========================================================================
-      - name: Log in to Amazon ECR
-        id: login-ecr
-        uses: aws-actions/amazon-ecr-login@v2
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ vars.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Build, Tag, and Push Docker Images
-        id: docker-build
-        env:
-          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-          IMAGE_TAG: ${{ github.sha }}
-        run: |
-          docker build -t "$ECR_REGISTRY/backend:$IMAGE_TAG" -t "$ECR_REGISTRY/backend:latest" ./backend
-          docker push "$ECR_REGISTRY/backend:$IMAGE_TAG"
-          docker push "$ECR_REGISTRY/backend:latest"
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
 
-          docker build -t "$ECR_REGISTRY/frontend:$IMAGE_TAG" -t "$ECR_REGISTRY/frontend:latest" ./frontend
-          docker push "$ECR_REGISTRY/frontend:$IMAGE_TAG"
-          docker push "$ECR_REGISTRY/frontend:latest"
+      - name: Build and push backend image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./assesment-6/backend
+          push: true
+          tags: |
+            ${{ vars.DOCKERHUB_USERNAME }}/assesment-6-backend:${{ github.sha }}
+            ${{ vars.DOCKERHUB_USERNAME }}/assesment-6-backend:latest
+
+      - name: Build and push frontend image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./assesment-6/frontend
+          push: true
+          tags: |
+            ${{ vars.DOCKERHUB_USERNAME }}/assesment-6-frontend:${{ github.sha }}
+            ${{ vars.DOCKERHUB_USERNAME }}/assesment-6-frontend:latest
 
       # ========================================================================
       # Deploy to EC2 Web Servers via AWS Systems Manager (SSM)
@@ -61,9 +62,14 @@ jobs:
       - name: Deploy Containers to EC2 via AWS SSM Run Command
         env:
           AWS_REGION: ${{ secrets.AWS_REGION || 'us-east-1' }}
-          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          DOCKERHUB_USERNAME: ${{ vars.DOCKERHUB_USERNAME }}
           IMAGE_TAG: ${{ github.sha }}
         run: |
+          if [ -z "$DOCKERHUB_USERNAME" ]; then
+            echo "::error::Set the DOCKERHUB_USERNAME repository variable."
+            exit 1
+          fi
+
           INSTANCE_IDS=$(aws ec2 describe-instances \
             --region "$AWS_REGION" \
             --filters "Name=tag:Role,Values=WebServer" "Name=instance-state-name,Values=running" \
@@ -75,15 +81,14 @@ jobs:
           fi
 
           COMMANDS=$(jq -cn \
-            --arg region "$AWS_REGION" \
-            --arg registry "$ECR_REGISTRY" \
+            --arg username "$DOCKERHUB_USERNAME" \
             --arg tag "$IMAGE_TAG" \
             --arg sha "$GITHUB_SHA" \
             '{commands:[
               "set -eu",
               ("git -C /opt/app/source fetch --depth 1 origin " + $sha),
               ("git -C /opt/app/source checkout --detach " + $sha),
-              ("cd /opt/app/source/assesment-6 && export DB_PASSWORD=\"$(aws ssm get-parameter --region " + $region + " --name \"$(sed -n '\''s/^DB_PASSWORD_PARAMETER_NAME=//p'\'' .env)\" --with-decryption --query '\''Parameter.Value'\'' --output text)\" && export ECR_REGISTRY=" + $registry + " IMAGE_TAG=" + $tag + " && aws ecr get-login-password --region " + $region + " | docker login --username AWS --password-stdin " + $registry),
+              ("cd /opt/app/source/assesment-6 && export DOCKERHUB_USERNAME=" + ($username | @sh) + " IMAGE_TAG=" + ($tag | @sh)),
               "docker compose -f docker-compose.prod.yml pull",
               "docker compose -f docker-compose.prod.yml up -d --no-build --remove-orphans",
               "docker image prune -f"

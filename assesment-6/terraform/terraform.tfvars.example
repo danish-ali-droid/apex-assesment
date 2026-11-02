@@ -4,12 +4,11 @@ project_name        = "cloudops-fullstack"
 environment         = "production"
 repository_url      = "https://github.com/danish-ali-droid/apex-assesment.git"
 repository_ref      = "main"
+dockerhub_username  = "your-dockerhub-username"
 vpc_cidr            = "10.0.0.0/16"
 public_subnet_cidrs = ["10.0.1.0/24", "10.0.2.0/24"]
 instance_type       = "t2.micro"
 
-# Create this SecureString in Systems Manager Parameter Store before applying Terraform.
-db_password_parameter_name = "/cloudops-fullstack/production/db-password"
 db_user     = "postgres"
 db_name     = "librarydb"
 

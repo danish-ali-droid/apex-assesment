@@ -27,18 +27,3 @@ output "target_group_arn" {
   description = "Target group ARN for CI/CD deployments"
   value       = module.load_balancer.target_group_arn
 }
-
-output "ecr_registry" {
-  description = "Amazon ECR registry hostname for application images"
-  value       = module.ecr.registry
-}
-
-output "backend_ecr_url" {
-  description = "Amazon ECR repository URL for the backend image"
-  value       = module.ecr.backend_repository_url
-}
-
-output "frontend_ecr_url" {
-  description = "Amazon ECR repository URL for the frontend image"
-  value       = module.ecr.frontend_repository_url
-}

@@ -89,26 +89,6 @@ moved {
 }
 
 moved {
-  from = aws_iam_role_policy_attachment.ecr_read_only
-  to   = module.iam.aws_iam_role_policy_attachment.ecr_read_only
-}
-
-moved {
-  from = aws_iam_role_policy.db_password_parameter
-  to   = module.iam.aws_iam_role_policy.db_password_parameter
-}
-
-moved {
   from = aws_iam_instance_profile.ec2_profile
   to   = module.iam.aws_iam_instance_profile.ec2_profile
-}
-
-moved {
-  from = aws_ecr_repository.backend
-  to   = module.ecr.aws_ecr_repository.backend
-}
-
-moved {
-  from = aws_ecr_repository.frontend
-  to   = module.ecr.aws_ecr_repository.frontend
 }

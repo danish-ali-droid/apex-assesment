@@ -17,15 +17,9 @@ module "security" {
 module "iam" {
   source = "./modules/iam"
 
-  project_name               = var.project_name
-  aws_region                 = var.aws_region
-  db_password_parameter_name = var.db_password_parameter_name
-}
-
-module "ecr" {
-  source = "./modules/ecr"
-
   project_name = var.project_name
+  aws_region = var.aws_region 
+  db_password_parameter_name = var.db_password
 }
 
 module "load_balancer" {
@@ -48,12 +42,11 @@ module "compute" {
   target_group_arn      = module.load_balancer.target_group_arn
   key_name              = var.key_name
   user_data = templatefile("${path.module}/modules/compute/user_data.sh", {
-    db_user                    = var.db_user
-    db_password_parameter_name = var.db_password_parameter_name
-    db_name                    = var.db_name
-    repository_url             = var.repository_url
-    repository_ref             = var.repository_ref
-    ecr_registry               = module.ecr.registry
-    aws_region                 = var.aws_region
+    db_user            = var.db_user
+    db_password_dotenv = "'${replace(replace(var.db_password, "\\", "\\\\"), "'", "\\'")}'"
+    db_name            = var.db_name
+    repository_url     = var.repository_url
+    repository_ref     = var.repository_ref
+    dockerhub_username = var.dockerhub_username
   })
 }

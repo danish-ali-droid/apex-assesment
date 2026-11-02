@@ -15,22 +15,16 @@ Run backend tests with `cd backend && npm test`. Stop the containers with `docke
 
 ## Deploy to AWS
 
-Configure GitHub Actions AWS credentials (OIDC recommended) and create the database password in AWS Systems Manager Parameter Store as a `SecureString` named `/cloudops-fullstack/production/db-password`. Then configure and apply Terraform:
+Create public Docker Hub repositories named `assesment-6-backend` and `assesment-6-frontend`. Configure the `DOCKERHUB_USERNAME` repository variable, `DOCKERHUB_TOKEN`, AWS access-key secrets, and Terraform input secrets in GitHub Actions. Set `DB_PASSWORD` as a GitHub Actions secret; Terraform passes it to EC2 during instance provisioning, and it is written to the instance's `.env` file.
 
-```bash
-cd terraform
-terraform init
-cp terraform.tfvars.example terraform.tfvars
-terraform plan
-terraform apply
-```
+Run the Terraform GitHub Actions workflow manually and choose `plan` or `apply`.
 
-The sample uses two EC2 instances with separate local databases; use shared RDS before relying on consistent data or production availability. Production secrets belong in SSM, not `.env` files.
+The sample uses two EC2 instances with separate local databases; use shared RDS before relying on consistent data or production availability. Terraform state and EC2 user data contain the database password, so restrict access to both and keep the encrypted remote state backend enabled.
 
 ## Security
 
-- **Secrets:** Keep `.env` files and credentials out of Git. Use GitHub Actions secrets for deployment credentials, preferably OIDC instead of long-lived AWS keys. Store the production database password as an SSM `SecureString`; EC2 retrieves it using its instance role.
-- **Least privilege:** EC2 can read only the configured database parameter and has SSM and ECR read access. Instance HTTP ingress is restricted to the load balancer; SSH is disabled unless administrator CIDRs are configured. The backend container runs as a non-root user. The sample load balancer serves HTTP, so configure HTTPS before production use.
+- **Secrets:** Keep `.env` files and credentials out of Git. Use GitHub Actions secrets for deployment credentials and restrict the AWS access keys to the permissions required by the workflows. The database password is passed to Terraform from GitHub Actions and stored on EC2; access to Terraform state and EC2 metadata must be restricted.
+- **Least privilege:** EC2 uses SSM for management, and application images are pulled from public Docker Hub repositories. Instance HTTP ingress is restricted to the load balancer; SSH is disabled unless administrator CIDRs are configured. The backend container runs as a non-root user. The sample load balancer serves HTTP, so configure HTTPS before production use.
 - **Scanning:** CI runs Gitleaks, `npm audit` at high severity, and Trivy scans of both Docker images for high and critical OS/library vulnerabilities. Address findings before deployment.
 
 ## Cost-aware hosting path

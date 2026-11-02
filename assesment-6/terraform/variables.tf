@@ -7,13 +7,11 @@ variable "aws_region" {
 variable "project_name" {
   description = "Project name prefix for tags and resources"
   type        = string
-  default     = "cloudops-fullstack"
 }
 
 variable "repository_url" {
   description = "Git repository containing the application source"
   type        = string
-  default     = "https://github.com/danish-ali-droid/apex-assesment.git"
 }
 
 variable "repository_ref" {
@@ -22,10 +20,15 @@ variable "repository_ref" {
   default     = "main"
 }
 
+variable "dockerhub_username" {
+  description = "Docker Hub username that owns the public application image repositories"
+  type        = string
+}
+
 variable "environment" {
   description = "Environment identifier (e.g., dev, staging, production)"
   type        = string
-  default     = "production"
+
 }
 
 variable "vpc_cidr" {
@@ -60,23 +63,22 @@ variable "ssh_allowed_cidrs" {
 variable "key_name" {
   description = "Optional AWS EC2 key pair name for SSH access"
   type        = string
-  default     = ""
 }
 
-variable "db_password_parameter_name" {
-  description = "Name of the SSM SecureString parameter containing the PostgreSQL password"
+variable "db_password" {
+  description = "PostgreSQL password passed from the GitHub Actions secret"
   type        = string
-  default     = "/cloudops-fullstack/production/db-password"
+  sensitive   = true
 }
 
 variable "db_name" {
   description = "PostgreSQL database name"
   type        = string
-  default     = "librarydb"
+
 }
 
 variable "db_user" {
   description = "PostgreSQL username"
   type        = string
-  default     = "postgres"
+
 }

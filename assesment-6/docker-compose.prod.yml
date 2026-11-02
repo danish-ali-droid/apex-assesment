@@ -18,7 +18,7 @@ services:
       - app-network
 
   backend:
-    image: ${ECR_REGISTRY:-fullstack}/backend:${IMAGE_TAG:-latest}
+    image: ${DOCKERHUB_USERNAME:?Set DOCKERHUB_USERNAME in the environment or .env file}/assesment-6-backend:${IMAGE_TAG:-latest}
     build:
       context: ./backend
       dockerfile: Dockerfile
@@ -44,7 +44,7 @@ services:
       - app-network
 
   frontend:
-    image: ${ECR_REGISTRY:-fullstack}/frontend:${IMAGE_TAG:-latest}
+    image: ${DOCKERHUB_USERNAME:?Set DOCKERHUB_USERNAME in the environment or .env file}/assesment-6-frontend:${IMAGE_TAG:-latest}
     build:
       context: ./frontend
       dockerfile: Dockerfile

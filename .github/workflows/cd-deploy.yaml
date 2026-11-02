@@ -1,13 +1,10 @@
 name: Continuous Deployment (CD) to AWS
 
 on:
-  push:
+  workflow_run:
+    workflows: ["Continuous Integration & Security Scanning"]
+    types: [completed]
     branches: [main]
-    paths:
-      - 'assesment-6/backend/**'
-      - 'assesment-6/frontend/**'
-      - 'assesment-6/docker-compose*'
-      - '.github/workflows/cd-deploy.yaml'
   workflow_dispatch:
 
 permissions:
@@ -16,10 +13,15 @@ permissions:
 jobs:
   build-and-deploy:
     name: Build, Push & Deploy Containers
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
+    env:
+      SOURCE_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
+        with:
+          ref: ${{ env.SOURCE_SHA }}
 
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v4
@@ -43,7 +45,7 @@ jobs:
           context: ./assesment-6/backend
           push: true
           tags: |
-            ${{ vars.DOCKERHUB_USERNAME }}/assesment-6-backend:${{ github.sha }}
+            ${{ vars.DOCKERHUB_USERNAME }}/assesment-6-backend:${{ env.SOURCE_SHA }}
             ${{ vars.DOCKERHUB_USERNAME }}/assesment-6-backend:latest
 
       - name: Build and push frontend image
@@ -52,7 +54,7 @@ jobs:
           context: ./assesment-6/frontend
           push: true
           tags: |
-            ${{ vars.DOCKERHUB_USERNAME }}/assesment-6-frontend:${{ github.sha }}
+            ${{ vars.DOCKERHUB_USERNAME }}/assesment-6-frontend:${{ env.SOURCE_SHA }}
             ${{ vars.DOCKERHUB_USERNAME }}/assesment-6-frontend:latest
 
       # ========================================================================
@@ -63,7 +65,8 @@ jobs:
         env:
           AWS_REGION: ${{ secrets.AWS_REGION || 'us-east-1' }}
           DOCKERHUB_USERNAME: ${{ vars.DOCKERHUB_USERNAME }}
-          IMAGE_TAG: ${{ github.sha }}
+          APP_CONFIG_SECRET_ID: ${{ secrets.APP_CONFIG_SECRET_NAME || 'cloudops-fullstack/application-config' }}
+          IMAGE_TAG: ${{ env.SOURCE_SHA }}
         run: |
           if [ -z "$DOCKERHUB_USERNAME" ]; then
             echo "::error::Set the DOCKERHUB_USERNAME repository variable."
@@ -79,18 +82,22 @@ jobs:
             echo "::error::No running EC2 instances tagged Role=WebServer were found."
             exit 1
           fi
+          if [ -z "$APP_CONFIG_SECRET_ID" ]; then
+            echo "::error::Set the APP_CONFIG_SECRET_NAME GitHub Actions secret."
+            exit 1
+          fi
 
           COMMANDS=$(jq -cn \
+            --arg region "$AWS_REGION" \
+            --arg secret_id "$APP_CONFIG_SECRET_ID" \
             --arg username "$DOCKERHUB_USERNAME" \
             --arg tag "$IMAGE_TAG" \
-            --arg sha "$GITHUB_SHA" \
+            --arg sha "$SOURCE_SHA" \
             '{commands:[
               "set -eu",
               ("git -C /opt/app/source fetch --depth 1 origin " + $sha),
               ("git -C /opt/app/source checkout --detach " + $sha),
-              ("cd /opt/app/source/assesment-6 && export DOCKERHUB_USERNAME=" + ($username | @sh) + " IMAGE_TAG=" + ($tag | @sh)),
-              "docker compose -f docker-compose.prod.yml pull",
-              "docker compose -f docker-compose.prod.yml up -d --no-build --remove-orphans",
+              ("cd /opt/app/source/assesment-6 && export AWS_REGION=" + ($region | @sh) + " APP_CONFIG_SECRET_ID=" + ($secret_id | @sh) + " DOCKERHUB_USERNAME=" + ($username | @sh) + " IMAGE_TAG=" + ($tag | @sh) + " && ./scripts/deploy-from-secrets.sh"),
               "docker image prune -f"
             ]}')
 
@@ -99,7 +106,7 @@ jobs:
             --targets "Key=tag:Role,Values=WebServer" \
             --document-name "AWS-RunShellScript" \
             --parameters "$COMMANDS" \
-            --comment "Automated GitHub Actions Deployment - Commit ${{ github.sha }}" \
+            --comment "Automated GitHub Actions Deployment - Commit ${{ env.SOURCE_SHA }}" \
             --query "Command.CommandId" \
             --output text)
 

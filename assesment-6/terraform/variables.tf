@@ -25,6 +25,12 @@ variable "dockerhub_username" {
   type        = string
 }
 
+variable "app_config_secret_name" {
+  description = "AWS Secrets Manager name used to store the application environment"
+  type        = string
+  default     = "cloudops-fullstack/application-config"
+}
+
 variable "environment" {
   description = "Environment identifier (e.g., dev, staging, production)"
   type        = string
@@ -66,9 +72,43 @@ variable "key_name" {
 }
 
 variable "db_password" {
-  description = "PostgreSQL password passed from the GitHub Actions secret"
+  description = "PostgreSQL password stored in the application Secrets Manager secret"
   type        = string
   sensitive   = true
+}
+
+variable "node_env" {
+  description = "Node.js runtime environment"
+  type        = string
+  default     = "production"
+}
+
+variable "host_port" {
+  description = "Host port used to publish the frontend"
+  type        = number
+  default     = 3000
+
+  validation {
+    condition     = var.host_port >= 1 && var.host_port <= 65535
+    error_message = "host_port must be between 1 and 65535."
+  }
+}
+
+variable "db_host" {
+  description = "Database hostname used by the backend"
+  type        = string
+  default     = "postgres"
+}
+
+variable "db_port" {
+  description = "Database port used by the backend"
+  type        = number
+  default     = 5432
+
+  validation {
+    condition     = var.db_port >= 1 && var.db_port <= 65535
+    error_message = "db_port must be between 1 and 65535."
+  }
 }
 
 variable "db_name" {

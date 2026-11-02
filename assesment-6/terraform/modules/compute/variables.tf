@@ -28,6 +28,11 @@ variable "target_group_arn" {
   type        = string
 }
 
+variable "target_port" {
+  description = "Frontend host port used by the target group attachment"
+  type        = number
+}
+
 variable "user_data" {
   description = "Bootstrap script supplied to each web server"
   type        = string

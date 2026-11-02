@@ -17,3 +17,8 @@ variable "security_group_id" {
   description = "Security group ID attached to the load balancer"
   type        = string
 }
+
+variable "target_port" {
+  description = "Frontend host port used by the target group"
+  type        = number
+}

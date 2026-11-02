@@ -6,6 +6,8 @@ on:
     paths:
       - 'assesment-6/**'
       - '.github/workflows/ci.yaml'
+      - '.github/workflows/cd-deploy.yaml'
+      - '.github/workflows/terraform.yaml'
   pull_request:
     branches: [main, master]
     paths:

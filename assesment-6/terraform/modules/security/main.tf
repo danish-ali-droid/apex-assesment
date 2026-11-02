@@ -31,8 +31,8 @@ resource "aws_security_group" "ec2_sg" {
 
   ingress {
     description     = "HTTP traffic strictly from ALB"
-    from_port       = 80
-    to_port         = 80
+    from_port       = var.host_port
+    to_port         = var.host_port
     protocol        = "tcp"
     security_groups = [aws_security_group.alb_sg.id]
   }

@@ -13,3 +13,8 @@ variable "ssh_allowed_cidrs" {
   type        = list(string)
   default     = []
 }
+
+variable "host_port" {
+  description = "Frontend host port allowed from the load balancer"
+  type        = number
+}

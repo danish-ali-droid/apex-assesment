@@ -49,5 +49,5 @@ resource "aws_lb_target_group_attachment" "web_server" {
 
   target_group_arn = var.target_group_arn
   target_id        = each.value.id
-  port             = 80
+  port             = var.target_port
 }

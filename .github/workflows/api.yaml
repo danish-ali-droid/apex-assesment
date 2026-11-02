@@ -7,6 +7,9 @@ on:
      - 'assesment-2/**'
      - '.github/workflows/api.yaml'
 permissions: write-all
+concurrency:
+  group: assesment-pipline
+  cancel-in-progress: true
 jobs:
   lint-test:
      runs-on: ubuntu-latest

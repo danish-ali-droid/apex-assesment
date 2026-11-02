@@ -69,6 +69,7 @@ variable "ssh_allowed_cidrs" {
 variable "key_name" {
   description = "Optional AWS EC2 key pair name for SSH access"
   type        = string
+  default     = ""
 }
 
 variable "db_password" {

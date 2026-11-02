@@ -2,18 +2,19 @@ name: Continuous Deployment (CD) to AWS
 
 on:
   workflow_run:
-    workflows: ["Continuous Integration & Security Scanning"]
+    workflows: ["Terraform Infrastructure Pipeline"]
     types: [completed]
     branches: [main]
-  workflow_dispatch:
 
 permissions:
   contents: read
-
+concurrency:
+  group: cd-deploy
+  cancel-in-progress: true
 jobs:
   build-and-deploy:
     name: Build, Push & Deploy Containers
-    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+    if: github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'workflow_run'
     runs-on: ubuntu-latest
     env:
       SOURCE_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
@@ -73,15 +74,61 @@ jobs:
             exit 1
           fi
 
-          INSTANCE_IDS=$(aws ec2 describe-instances \
+          INSTANCE_INFO=$(aws ec2 describe-instances \
             --region "$AWS_REGION" \
-            --filters "Name=tag:Role,Values=WebServer" "Name=instance-state-name,Values=running" \
-            --query 'Reservations[].Instances[].InstanceId' \
+            --filters "Name=tag:Role,Values=WebServer" "Name=instance-state-name,Values=pending,running,stopping,stopped,shutting-down" \
+            --query 'Reservations[].Instances[].[InstanceId,State.Name]' \
             --output text)
-          if [ -z "$INSTANCE_IDS" ]; then
-            echo "::error::No running EC2 instances tagged Role=WebServer were found."
+          if [ -z "$INSTANCE_INFO" ]; then
+            echo "::error::No EC2 instances tagged Role=WebServer were found in region $AWS_REGION. Check AWS_REGION and run Terraform apply first."
             exit 1
           fi
+
+          echo "EC2 instances tagged Role=WebServer in $AWS_REGION:"
+          printf '%s\n' "$INSTANCE_INFO"
+
+          INSTANCE_IDS=$(awk '{print $1}' <<<"$INSTANCE_INFO")
+          STOPPED_IDS=$(awk '$2 == "stopped" {print $1}' <<<"$INSTANCE_INFO")
+          INVALID_STATES=$(awk '$2 != "running" && $2 != "stopped" && $2 != "pending" {print $1 " (" $2 ")"}' <<<"$INSTANCE_INFO")
+          if [ -n "$INVALID_STATES" ]; then
+            echo "::error::Cannot deploy while WebServer instances are stopping or in another transitional state: $INVALID_STATES"
+            exit 1
+          fi
+
+          if [ -n "$STOPPED_IDS" ]; then
+            echo "Starting stopped WebServer instances."
+            aws ec2 start-instances --region "$AWS_REGION" --instance-ids $STOPPED_IDS
+          fi
+
+          echo "Waiting for WebServer instances to reach running state."
+          aws ec2 wait instance-running --region "$AWS_REGION" --instance-ids $INSTANCE_IDS
+
+          OFFLINE_IDS=""
+          for attempt in $(seq 1 40); do
+            OFFLINE_IDS=""
+            for instance_id in $INSTANCE_IDS; do
+              PING_STATUS=$(aws ssm describe-instance-information \
+                --region "$AWS_REGION" \
+                --filters "Key=InstanceIds,Values=$instance_id" \
+                --query 'InstanceInformationList[0].PingStatus' \
+                --output text)
+              if [ "$PING_STATUS" != "Online" ]; then
+                OFFLINE_IDS="$OFFLINE_IDS $instance_id"
+              fi
+            done
+
+            if [ -z "$OFFLINE_IDS" ]; then
+              break
+            fi
+            echo "Waiting for SSM agent on:$OFFLINE_IDS (attempt $attempt/40)."
+            sleep 15
+          done
+
+          if [ -n "$OFFLINE_IDS" ]; then
+            echo "::error::SSM agents are still offline for:$OFFLINE_IDS. Check the EC2 instance profile, SSM connectivity, and user data."
+            exit 1
+          fi
+
           if [ -z "$APP_CONFIG_SECRET_ID" ]; then
             echo "::error::Set the APP_CONFIG_SECRET_NAME GitHub Actions secret."
             exit 1
@@ -103,7 +150,7 @@ jobs:
 
           COMMAND_ID=$(aws ssm send-command \
             --region "$AWS_REGION" \
-            --targets "Key=tag:Role,Values=WebServer" \
+            --instance-ids $INSTANCE_IDS \
             --document-name "AWS-RunShellScript" \
             --parameters "$COMMANDS" \
             --comment "Automated GitHub Actions Deployment - Commit ${{ env.SOURCE_SHA }}" \

@@ -12,7 +12,7 @@ module "security" {
   project_name      = var.project_name
   vpc_id            = module.network.vpc_id
   ssh_allowed_cidrs = var.ssh_allowed_cidrs
-
+  host_port         = var.host_port
 }
 
 module "secrets_manager" {
@@ -44,7 +44,7 @@ module "load_balancer" {
   vpc_id            = module.network.vpc_id
   public_subnet_ids = module.network.public_subnet_ids
   security_group_id = module.security.alb_security_group_id
-
+  target_port       = var.host_port
 }
 
 module "compute" {
@@ -56,6 +56,7 @@ module "compute" {
   security_group_id     = module.security.instance_security_group_id
   instance_profile_name = module.iam.instance_profile_name
   target_group_arn      = module.load_balancer.target_group_arn
+  target_port           = var.host_port
   key_name              = var.key_name
   user_data = templatefile("${path.module}/modules/compute/user_data.sh", {
     aws_region            = var.aws_region

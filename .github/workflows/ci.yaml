@@ -16,6 +16,9 @@ on:
 permissions:
   contents: read
   security-events: write
+concurrency:
+  group: ci-security-scanning
+  cancel-in-progress: true
 
 jobs:
   test-and-build:
@@ -105,6 +108,7 @@ jobs:
         uses: aquasecurity/trivy-action@f9424c10c36e288d5fa79bd3dfd1aeb2d6eae808 # v0.33.0
         with:
           image-ref: 'fullstack-backend:scan'
+          version: v0.71.0
           format: 'table'
           exit-code: '1'
           ignore-unfixed: true
@@ -119,6 +123,7 @@ jobs:
         uses: aquasecurity/trivy-action@f9424c10c36e288d5fa79bd3dfd1aeb2d6eae808 # v0.33.0
         with:
           image-ref: 'fullstack-frontend:scan'
+          version: v0.71.0
           format: 'table'
           exit-code: '1'
           ignore-unfixed: true
